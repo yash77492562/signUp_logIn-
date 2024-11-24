@@ -10,7 +10,6 @@ import axios from 'axios';
 import { userSigninSchema, type UserSigninSchema } from '@repo/zod/client';
 import Link from 'next/link';
 
-
 type SignUpProps = {
   onSignUp: (data: UserSigninSchema) => Promise<void>;
 };
@@ -24,72 +23,39 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
-    watch
+    formState: { errors, isSubmitting, isDirty, dirtyFields },
+    watch,
+    trigger,
   } = useForm<UserSigninSchema>({
-    resolver: zodResolver(userSigninSchema)
+    resolver: zodResolver(userSigninSchema),
+    mode: 'all',
+    criteriaMode: 'all',
+    shouldFocusError: true,
+    delayError: 500
   });
 
   const email = watch('email');
   const phone = watch('phone');
+  const password = watch('password');
+  const username = watch('username');
 
-  // Check email availability
+  // Show validation errors only when field is dirty and not empty
+  const shouldShowError = (field: keyof UserSigninSchema) => {
+    const value = watch(field);
+    return dirtyFields[field] && value && value.length > 0 && errors[field];
+  };
+
   useEffect(() => {
-    const checkEmail = async () => {
-      if (!email) return;
-      
-      try {
-        const response = await axios.post('/api/userAuthenticate', { email },{
-          headers:{
-            "Content-Type":"application/json"
-          }
-        });
-        if (response.status === 200) {
-          setEmailError('This email is already registered');
-        } else {
-          setEmailError('');
-        }
-      } catch (error) {
-        // Silently handle 500 errors
-        setEmailError('');
-      }
+    const validateField = async () => {
+      if (email) await trigger('email');
+      if (phone) await trigger('phone');
+      if (password) await trigger('password');
+      if (username) await trigger('username');
     };
-
-    const timeoutId = setTimeout(checkEmail, 500);
-    return () => clearTimeout(timeoutId);
-  }, [email]);
-
-  // Check phone availability
-  useEffect(() => {
-    const checkPhone = async () => {
-      if (!phone) return;
-      
-      try {
-        const response = await axios.post('/api/userAuthenticate', { phone },{
-          headers:{
-            "Content-Type":"application/json"
-          }
-        });
-        if (response.status === 200) {
-          setPhoneError('This phone number is already registered');
-        } else {
-          setPhoneError('');
-        }
-      } catch (error) {
-        // Silently handle 500 errors
-        setPhoneError('');
-      }
-    };
-
-    const timeoutId = setTimeout(checkPhone, 500);
-    return () => clearTimeout(timeoutId);
-  }, [phone]);
+    validateField();
+  }, [email, phone, password, username, trigger]);
 
   const onSubmit = async (data: UserSigninSchema) => {
-    if (emailError || phoneError) {
-      return;
-    }
-    
     try {
       setServerError(null);
       await onSignUp(data);
@@ -100,7 +66,10 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
     }
   };
 
-  // Rest of your existing component code remains exactly the same
+  const handleFieldBlur = async (fieldName: keyof UserSigninSchema) => {
+    await trigger(fieldName);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
       <Card className="w-full max-w-lg">
@@ -117,15 +86,18 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
               <div className="relative">
                 <User className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
+                  type="text"
                   id="username"
-                  type='text'
-                  {...register('username')}
-                  className="pl-9"
+                  className={`pl-9 ${shouldShowError('username') ? 'border-red-500' : ''}`}
                   placeholder="JohnDoe"
+                  {...register('username', {
+                    required: true,
+                    onBlur: () => handleFieldBlur('username')
+                  })}
                 />
               </div>
-              {errors.username && (
-                <p className="text-sm text-red-500 mt-1">{errors.username.message}</p>
+              {shouldShowError('username') && (
+                <p className="text-sm text-red-500 mt-1">{errors.username?.message}</p>
               )}
             </div>
 
@@ -136,25 +108,18 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                 <Input
                   id="email"
                   type="email"
-                  {...register('email')}
-                  className="pl-9"
+                  className={`pl-9 ${(shouldShowError('email') || emailError) ? 'border-red-500' : ''}`}
                   placeholder="example@gmail.com"
+                  {...register('email', {
+                    required: true,
+                    onBlur: () => handleFieldBlur('email')
+                  })}
                 />
               </div>
-              
-              {emailError && (
-                <div className="space-y-1 mt-1">
-                  <p className="text-sm text-red-500">{emailError}</p>
-                  {emailError === 'Please enter a valid email address' && (
-                    <ul className="text-xs text-gray-500 list-disc pl-4">
-                      <li>Must be a valid email format (e.g., name@example.com)</li>
-                      <li>Cannot contain spaces</li>
-                    </ul>
-                  )}
-                </div>
-              )}
-              {emailError && (
-                <p className="text-sm text-red-500 mt-1">{emailError}</p>
+              {(shouldShowError('email') || emailError) && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.email?.message || emailError}
+                </p>
               )}
             </div>
 
@@ -165,16 +130,18 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                 <Input
                   id="phone"
                   type="tel"
-                  {...register('phone')}
-                  className="pl-9"
+                  className={`pl-9 ${(shouldShowError('phone') || phoneError) ? 'border-red-500' : ''}`}
                   placeholder="1234567890"
+                  {...register('phone', {
+                    required: true,
+                    onBlur: () => handleFieldBlur('phone')
+                  })}
                 />
               </div>
-              {errors.phone && (
-                <p className="text-sm text-red-500 mt-1">{errors.phone.message}</p>
-              )}
-              {phoneError && (
-                <p className="text-sm text-red-500 mt-1">{phoneError}</p>
+              {(shouldShowError('phone') || phoneError) && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.phone?.message || phoneError}
+                </p>
               )}
             </div>
 
@@ -185,9 +152,12 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  {...register('password')}
-                  className="pl-9"
+                  className={`pl-9 ${shouldShowError('password') ? 'border-red-500' : ''}`}
                   placeholder="Enter your password"
+                  {...register('password', {
+                    required: true,
+                    onBlur: () => handleFieldBlur('password')
+                  })}
                 />
                 <button
                   type="button"
@@ -201,18 +171,18 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                   )}
                 </button>
               </div>
-              {errors.password && (
-                <div className="space-y-1 mt-1">
-                  <p className="text-sm text-red-500">{errors.password.message}</p>
-                  <ul className="text-xs text-gray-500 list-disc pl-4">
+              {shouldShowError('password') ? (
+                <div>
+                  <p className="text-sm text-red-500 mt-1">{errors.password?.message}</p>
+                  <ul className="text-xs text-gray-500 list-disc pl-4 mt-1">
                     <li>At least 8 characters long</li>
                     <li>One uppercase letter</li>
                     <li>One lowercase letter</li>
                     <li>One number</li>
                     <li>One special character</li>
                   </ul>
-                </div>
-              )}
+                  </div>
+              ):('')}
             </div>
 
             {serverError && (
@@ -224,7 +194,7 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
             <Button 
               type="submit" 
               className="w-full"
-              disabled={isSubmitting || !!emailError || !!phoneError}
+              disabled={isSubmitting || !!emailError || !!phoneError || !isDirty}
             >
               {isSubmitting ? "Creating Account..." : "Create Account"}
             </Button>
