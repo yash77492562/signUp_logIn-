@@ -19,6 +19,7 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
+  const [isCheckingUser, setIsCheckingUser] = useState(false);
 
   const {
     register,
@@ -39,6 +40,84 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
   const password = watch('password');
   const username = watch('username');
 
+  // Debounce function
+  const debounce = (func: Function, wait: number) => {
+    let timeout: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  };
+
+  // Check if user exists
+  const checkUserExists = async (email: string | null, phone: string | null) => {
+    if (!email && !phone) return;
+    
+    setIsCheckingUser(true);
+    try {
+      const response = await axios.post('/api/userAuthenticate', {
+        email,
+        phone
+      });
+
+      if (response.status === 200) {
+        if (email) {
+          setEmailError('This email is already registered');
+        }
+        if (phone) {
+          setPhoneError('This phone number is already registered');
+        }
+      }
+    } catch (error) {
+      // If user doesn't exist, clear the errors
+      if (email) setEmailError('');
+      if (phone) setPhoneError('');
+    } finally {
+      setIsCheckingUser(false);
+    }
+  };
+
+  // Debounced version of checkUserExists
+  const debouncedCheckUser = debounce(checkUserExists, 500);
+
+  // Validate and check email
+  const validateAndCheckEmail = async () => {
+    if (!email) return;
+    
+    // Trigger zod validation for email
+    const emailResult = await trigger('email');
+    
+    // Only check for existing user if zod validation passes
+    if (emailResult && !errors.email) {
+      debouncedCheckUser(email, null);
+    } else {
+      setEmailError(''); // Clear existing user error if validation fails
+    }
+  };
+
+  // Validate and check phone
+  const validateAndCheckPhone = async () => {
+    if (!phone) return;
+    
+    // Trigger zod validation for phone
+    const phoneResult = await trigger('phone');
+    
+    // Only check for existing user if zod validation passes
+    if (phoneResult && !errors.phone) {
+      debouncedCheckUser(null, phone);
+    } else {
+      setPhoneError(''); // Clear existing user error if validation fails
+    }
+  };
+
+  useEffect(() => {
+    validateAndCheckEmail();
+  }, [email]);
+
+  useEffect(() => {
+    validateAndCheckPhone();
+  }, [phone]);
+
   // Show validation errors only when field is dirty and not empty
   const shouldShowError = (field: keyof UserSigninSchema) => {
     const value = watch(field);
@@ -47,15 +126,17 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
 
   useEffect(() => {
     const validateField = async () => {
-      if (email) await trigger('email');
-      if (phone) await trigger('phone');
       if (password) await trigger('password');
       if (username) await trigger('username');
     };
     validateField();
-  }, [email, phone, password, username, trigger]);
+  }, [password, username, trigger]);
 
   const onSubmit = async (data: UserSigninSchema) => {
+    if (emailError || phoneError) {
+      return; // Prevent submission if user already exists
+    }
+
     try {
       setServerError(null);
       await onSignUp(data);
@@ -68,6 +149,11 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
 
   const handleFieldBlur = async (fieldName: keyof UserSigninSchema) => {
     await trigger(fieldName);
+    if (fieldName === 'email') {
+      validateAndCheckEmail();
+    } else if (fieldName === 'phone') {
+      validateAndCheckPhone();
+    }
   };
 
   return (
@@ -82,7 +168,7 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Admin Name</Label>
               <div className="relative">
                 <User className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
@@ -115,6 +201,9 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                     onBlur: () => handleFieldBlur('email')
                   })}
                 />
+                {isCheckingUser && email && !errors.email && (
+                  <span className="absolute right-3 top-2.5 text-gray-400">Checking...</span>
+                )}
               </div>
               {(shouldShowError('email') || emailError) && (
                 <p className="text-sm text-red-500 mt-1">
@@ -137,6 +226,9 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                     onBlur: () => handleFieldBlur('phone')
                   })}
                 />
+                {isCheckingUser && phone && !errors.phone && (
+                  <span className="absolute right-3 top-2.5 text-gray-400">Checking...</span>
+                )}
               </div>
               {(shouldShowError('phone') || phoneError) && (
                 <p className="text-sm text-red-500 mt-1">
@@ -181,7 +273,7 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
                     <li>One number</li>
                     <li>One special character</li>
                   </ul>
-                  </div>
+                </div>
               ):('')}
             </div>
 
@@ -194,7 +286,7 @@ const SignUp = ({ onSignUp }: SignUpProps) => {
             <Button 
               type="submit" 
               className="w-full"
-              disabled={isSubmitting || !!emailError || !!phoneError || !isDirty}
+              disabled={isSubmitting || !!emailError || !!phoneError || !isDirty || isCheckingUser}
             >
               {isSubmitting ? "Creating Account..." : "Create Account"}
             </Button>
