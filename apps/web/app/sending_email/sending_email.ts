@@ -8,13 +8,13 @@ export const sendOTPEmail = async (email: string, otp: string) => {
       port: 465,
       secure: true,
       auth: {
-        user: 'yssh200@gmail.com',
-        pass: 'vcezdfjjmzdrjunq'
+        user: 'example@gmail.com',
+        pass: 'vcezdfjjkdfakdfj'
       }
     });
   
     const mailOptions = {
-      from: 'yssh200@gmail.com',
+      from: 'example@gmail.com',
       to: email,
       subject: 'Your OTP for Password Reset',
       text: `Your OTP is: ${otp}`
